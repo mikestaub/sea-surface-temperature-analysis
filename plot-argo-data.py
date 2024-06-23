@@ -30,11 +30,11 @@ def save_cached_day(data, date, cache_dir):
     with open(cache_file, 'wb') as f:
         pickle.dump(data, f)
 
-def main(days_to_plot):
+def main(days_to_plot, rolling_window):
     argo_loader = ArgoDataFetcher(src='argovis', parallel=True, progress=True)
 
     end_date = datetime.now().date()
-    start_date = end_date - timedelta(days=days_to_plot)
+    start_date = end_date - timedelta(days=days_to_plot + rolling_window - 1)  # Extend start date for rolling average
 
     cache_dir = 'argo_data_cache'
 
@@ -58,24 +58,36 @@ def main(days_to_plot):
     df['TIME'] = pd.to_datetime(df['TIME'])
     df['date'] = df['TIME'].dt.date
     daily_temp = df.groupby('date')['TEMP'].mean().reset_index()
+    
+    # Calculate rolling average
+    daily_temp['rolling_avg'] = daily_temp['TEMP'].rolling(window=rolling_window, center=True).mean()
+    
+    # Trim the data to the requested number of days
+    daily_temp = daily_temp.iloc[-(days_to_plot):]
 
     print("Creating plot...")
     plt.figure(figsize=(15, 10))
-    plt.plot(daily_temp['date'], daily_temp['TEMP'], marker='o')
-    plt.title(f'Daily Sea Surface Temperature, World (60°S-60°N, 0-360°E)\nLast {days_to_plot} days', fontsize=16)
+    plt.plot(daily_temp['date'], daily_temp['TEMP'], label='Daily Average', alpha=0.5)
+    plt.plot(daily_temp['date'], daily_temp['rolling_avg'], label=f'{rolling_window}-day Rolling Average', linewidth=2)
+    plt.title(f'Sea Surface Temperature, World (60°S-60°N, 0-360°E)\nLast {days_to_plot} days', fontsize=16)
     plt.xlabel('Date', fontsize=12)
     plt.ylabel('Temperature (°C)', fontsize=12)
     plt.grid(True, linestyle='--', alpha=0.7)
+    plt.legend()
     plt.xticks(rotation=45)
     plt.tight_layout()
     plt.text(0.02, 0.02, 'Dataset: Argo float data (Argovis)', transform=plt.gca().transAxes, fontsize=8)
+    
+    # Save the plot as sst.png
+    plt.savefig('sst.png')
     plt.show()
 
     print("Done!")
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Plot sea surface temperature for a specified number of days.")
+    parser = argparse.ArgumentParser(description="Plot sea surface temperature for a specified number of days with rolling average.")
     parser.add_argument("days", type=int, help="Number of days to plot")
+    parser.add_argument("--window", type=int, default=7, help="Size of the rolling average window (default: 7)")
     args = parser.parse_args()
     
-    main(args.days)
+    main(args.days, args.window)
